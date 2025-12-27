@@ -78,7 +78,7 @@ class MusicPlayer:
             return self.current_track
 
         else:
-            self.current_track == None
+            self.current_track = None
             return None
 
     def clear_queue(self):
@@ -221,7 +221,11 @@ async def play(interaction: discord.Interaction, query: str):
             search_info = await loop.run_in_executor(
                 None, lambda: ydl.extract_info(f"ytsearch:{query}", download=False)
             )
-            if not search_info or "entries" not in search_info:
+            if (
+                not search_info
+                or "entries" not in search_info
+                or not search_info["entries"]
+            ):
                 await interaction.followup.send("❌ Ничего не найдено.")
                 return
 
@@ -250,7 +254,7 @@ async def play(interaction: discord.Interaction, query: str):
             duration_sources = [
                 detailed_info.get("duration"),
                 detailed_info.get("approx_duration"),
-                search_info["entries"][0].get["duration"],
+                search_info["entries"][0].get("duration"),
                 0,
             ]
 
@@ -271,16 +275,26 @@ async def play(interaction: discord.Interaction, query: str):
     voice_channel = interaction.user.voice.channel
     try:
         if interaction.guild.voice_client is None:
+            print(
+                f"[DEBUG] Подключаюсь к каналу: {voice_channel.name} (ID: {voice_channel.id})"
+            )
             player.voice_client = await voice_channel.connect()
         else:
+            print(
+                f"[DEBUG] Бот уже подключен к: {interaction.guild.voice_client.channel.name}"
+            )
             player.voice_client = interaction.guild.voice_client
             if player.voice_client.channel != voice_channel:
+                print(f"[DEBUG] Перемещаюсь в канал: {voice_channel.name}")
                 await player.voice_client.move_to(voice_channel)
-    except Exception as e:
-        await interaction.followup.send(f"❌ Ошибка подключения: {e}")
+    except discord.errors.ClientException as e:
+        await interaction.followup.send(f"❌ Ошибка клиента Discord: {e}")
         return
-
-    # 3. Добавление трека в очередь
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ Неожиданная ошибка: {type(e).__name__}: {e}"
+        )
+        return  # 3. Добавление трека в очередь
     queue_position = player.add_to_queue(track_info)
 
     # 4. Если ничего не играет, запускаем воспроизведение
@@ -301,7 +315,7 @@ async def play(interaction: discord.Interaction, query: str):
     description="Остановить воспроизведение и заставить бота выйти из канала",
 )
 async def stop_command(interaction: discord.Interaction):
-    player = get_music_player(guild_id)
+    player = get_music_player(interaction.guild_id)
     if player.voice_client:
         player.clear_queue()
         player.is_playing = False
